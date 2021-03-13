@@ -1,0 +1,317 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Thu Jul 18 10:35:48 2019 Run in python 3.7.3
+
+Script for the spine data of Patty from the USA project. 
+
+@author: Eelke SNoeren
+"""
+
+
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import seaborn as sns
+from itertools import chain
+sns.set()
+from PIL import Image
+import glob
+import os
+from matplotlib.backends.backend_pdf import PdfPages
+import multiprocessing as mp
+from pandas import ExcelWriter
+
+# Make a list of all folders
+dict_folders={}
+folders=["C:/Users/esn001/Documents/python/Python 3.8/Data projects/Patty USA/MPN","C:/Users/esn001/Documents/python/Python 3.8/Data projects/Patty USA/MPN_2","C:/Users/esn001/Documents/python/Python 3.8/Data projects/Patty USA/CPu",
+         "C:/Users/esn001/Documents/python/Python 3.8/Data projects/Patty USA/MeA","C:/Users/esn001/Documents/python/Python 3.8/Data projects/Patty USA/NAcC", 
+         "C:/Users/esn001/Documents/python/Python 3.8/Data projects/Patty USA/NAcSh"]
+names=['results_MPN', 'results_MPN_2','results_CPu', 'results_MeA','results_NAcC','results_NAcSh']
+names_rawdata=['results_MPN_rawdata', 'results_MPN_2_rawdata','results_CPu_rawdata', 'results_MeA_rawdata','results_NAcC_rawdata',
+               'results_NAcSh_rawdata']
+
+# now save the data frame to excel
+def save_xls(list_dfs, list_titles, xls_path):
+    with ExcelWriter(xls_path) as writer:
+        for n, df in enumerate(list_dfs):
+            name = list_titles[n]
+            df.to_excel(writer, name)
+        writer.save()
+
+for folder, name, name_raw in zip(folders, names, names_rawdata):
+    # Define the directory from which the files should come
+    os.chdir(folder)
+    
+    
+    # Delete the pdf in case it already existed to prevent errors
+    if os.path.exists("results_figures.pdf"):
+        os.remove("results_figures.pdf")
+    else:
+        print('PDF File does not exists')
+    
+    # Say where to save the file and with what name (note the use of / instead of \)
+    out_path1 = "C:/Users/esn001/Documents/python/Python 3.8/Data projects/Patty USA/Output/%s.xlsx" % name
+    out_path2 = "C:/Users/esn001/Documents/python/Python 3.8/Data projects/Patty USA/Output/%s.xlsx" % name_raw
+    
+    # name sheets
+    sheet1 = "Overall"
+    sheet2 = "Dendrite Spine Density"
+    sheet3 = "Spine Length"
+    sheet4 = "Spine Part Mean Diameter"
+    
+    from os import listdir
+    from os.path import isfile, join
+    filenames = [f for f in listdir(folder) if isfile(join(folder, f))]
+    
+    sheetnames= ["Overall", "Dendrite Spine Density", "Spine Length", "Spine Part Mean Diameter"]
+    
+    # Load all excel files in the folder into separate DataFrames and clean up
+    data_Spinelength = pd.DataFrame()
+    for position, i in enumerate(filenames): 
+        df = pd.read_excel('%s'% i, sheet_name=sheet3,skiprows=[0])
+        df["filename"]= i
+        df.columns = ['Spine Length','Unit','Category','Depth','Level','Time','FilementID','ID','Filename']
+        dfsel = df[['Filename','Spine Length']]
+        data_Spinelength = data_Spinelength.append(dfsel,ignore_index=True,sort=False)
+    
+    # Make a column for the experiment number
+    data_Spinelength=data_Spinelength.assign(slidenummer =lambda x: data_Spinelength.Filename.str.split('\s+').str[1])
+    
+    data_Spinelength=data_Spinelength.assign(preRatID =lambda x: data_Spinelength.Filename.str.split('\s+').str[0])
+    data_Spinelength=data_Spinelength.assign(RatID =lambda x: data_Spinelength.preRatID.str.split('_').str[-1])
+    data_Spinelength=data_Spinelength.assign(RatID =lambda x: data_Spinelength.RatID.str[1:])
+    
+    data_Spinelength=data_Spinelength.assign(Brainregion =lambda x: data_Spinelength.Filename.str.split('\s+').str[2])
+    data_Spinelength=data_Spinelength.assign(Neuron_pre =lambda x: data_Spinelength.Filename.str.split('\s+').str[3])
+    
+    data_Spinelength=data_Spinelength.assign(Segment_pre =lambda x: data_Spinelength.Filename.str.split('\s+').str[4])
+    data_Spinelength=data_Spinelength.assign(AB_pre =lambda x: data_Spinelength.Filename.str.split('\s+').str[5])
+    data_Spinelength=data_Spinelength.assign(Segment_pre2 =lambda x: data_Spinelength.Filename.str.split('\s+').str[6])
+    
+    data_Spinelength['Neuron']=np.where((data_Spinelength['Neuron_pre']=='PrL')|(data_Spinelength['Neuron_pre']=='IL'),data_Spinelength['Segment_pre'],data_Spinelength['Neuron_pre'])
+    data_Spinelength['Segment']=np.where((data_Spinelength['Neuron_pre']=='PrL')|(data_Spinelength['Neuron_pre']=='IL'),data_Spinelength['Segment_pre2'],data_Spinelength['Segment_pre'])
+    data_Spinelength['Segment']=np.where((data_Spinelength['Brainregion']=='PrL')|(data_Spinelength['Brainregion']=='IL'),data_Spinelength['AB_pre'],data_Spinelength['Segment'])
+    data_Spinelength['Subregion']=np.where((data_Spinelength['Neuron_pre']=='PrL')|(data_Spinelength['Neuron_pre']=='IL'),data_Spinelength['Neuron_pre'],"")
+    data_Spinelength['Subregion']=np.where((data_Spinelength['Brainregion']=='PrL'),data_Spinelength['Brainregion'],data_Spinelength['Subregion'])
+    data_Spinelength['Subregion']=np.where((data_Spinelength['Brainregion']=='IL'),data_Spinelength['Brainregion'],data_Spinelength['Subregion'])
+    data_Spinelength['AB']=np.where((data_Spinelength['Neuron_pre']=='PrL')|(data_Spinelength['Neuron_pre']=='IL'),data_Spinelength['AB_pre'],"")
+    data_Spinelength['AB']=np.where((data_Spinelength['Brainregion']=='PrL')|(data_Spinelength['Brainregion']=='IL'),data_Spinelength['Segment_pre'],data_Spinelength['AB'])
+    data_Spinelength['Brainregion']=np.where((data_Spinelength['Brainregion']=='PrL')|(data_Spinelength['Brainregion']=='IL'),'mPFC',data_Spinelength['Brainregion'])
+    
+    data_Spinelength=data_Spinelength.assign(Segment =lambda x: data_Spinelength.Segment.str.split('.').str[0])
+    data_Spinelength=data_Spinelength.assign(Neuron =lambda x: data_Spinelength.Neuron.str[-1])
+    data_Spinelength=data_Spinelength.assign(Segment =lambda x: data_Spinelength.Segment.str[-1])
+    
+    
+    # repeat for Spine diameter
+    # Load all excel files in the folder into separate DataFrames and clean up
+    data_Spinediameter = pd.DataFrame()
+    for position, i in enumerate(filenames): 
+        df = pd.read_excel('%s'% i, sheet_name=sheet4,skiprows=[0])
+        df["filename"]= i
+        df.columns = ['Spine Diameter','Unit','Category','Collection','Depth','Level','Time','FilementID','ID','Filename']
+        dfsel = df[['Filename','Spine Diameter']]
+        data_Spinediameter = data_Spinediameter.append(dfsel,ignore_index=True,sort=False)
+    
+    # Make a column for the experiment number
+    data_Spinediameter=data_Spinediameter.assign(slidenummer =lambda x: data_Spinediameter.Filename.str.split('\s+').str[1])
+    
+    data_Spinediameter=data_Spinediameter.assign(preRatID =lambda x: data_Spinediameter.Filename.str.split('\s+').str[0])
+    data_Spinediameter=data_Spinediameter.assign(RatID =lambda x: data_Spinediameter.preRatID.str.split('_').str[-1])
+    data_Spinediameter=data_Spinediameter.assign(RatID =lambda x: data_Spinediameter.RatID.str[1:])
+    
+    data_Spinediameter=data_Spinediameter.assign(Brainregion =lambda x: data_Spinediameter.Filename.str.split('\s+').str[2])
+    data_Spinediameter=data_Spinediameter.assign(Neuron_pre =lambda x: data_Spinediameter.Filename.str.split('\s+').str[3])
+    
+    data_Spinediameter=data_Spinediameter.assign(Segment_pre =lambda x: data_Spinediameter.Filename.str.split('\s+').str[4])
+    data_Spinediameter=data_Spinediameter.assign(AB_pre =lambda x: data_Spinediameter.Filename.str.split('\s+').str[5])
+    data_Spinediameter=data_Spinediameter.assign(Segment_pre2 =lambda x: data_Spinediameter.Filename.str.split('\s+').str[6])
+    
+    data_Spinediameter['Neuron']=np.where((data_Spinediameter['Neuron_pre']=='PrL')|(data_Spinediameter['Neuron_pre']=='IL'),data_Spinediameter['Segment_pre'],data_Spinediameter['Neuron_pre'])
+    data_Spinediameter['Segment']=np.where((data_Spinediameter['Neuron_pre']=='PrL')|(data_Spinediameter['Neuron_pre']=='IL'),data_Spinediameter['Segment_pre2'],data_Spinediameter['Segment_pre'])
+    data_Spinediameter['Segment']=np.where((data_Spinediameter['Brainregion']=='PrL')|(data_Spinediameter['Brainregion']=='IL'),data_Spinediameter['AB_pre'],data_Spinediameter['Segment'])
+    data_Spinediameter['Subregion']=np.where((data_Spinediameter['Neuron_pre']=='PrL')|(data_Spinediameter['Neuron_pre']=='IL'),data_Spinediameter['Neuron_pre'],"")
+    data_Spinediameter['Subregion']=np.where((data_Spinediameter['Brainregion']=='PrL'),data_Spinediameter['Brainregion'],data_Spinediameter['Subregion'])
+    data_Spinediameter['Subregion']=np.where((data_Spinediameter['Brainregion']=='IL'),data_Spinediameter['Brainregion'],data_Spinediameter['Subregion'])
+    data_Spinediameter['AB']=np.where((data_Spinediameter['Neuron_pre']=='PrL')|(data_Spinediameter['Neuron_pre']=='IL'),data_Spinediameter['AB_pre'],"")
+    data_Spinediameter['AB']=np.where((data_Spinediameter['Brainregion']=='PrL')|(data_Spinediameter['Brainregion']=='IL'),data_Spinediameter['Segment_pre'],data_Spinediameter['AB'])
+    data_Spinediameter['Brainregion']=np.where((data_Spinediameter['Brainregion']=='PrL')|(data_Spinediameter['Brainregion']=='IL'),'mPFC',data_Spinediameter['Brainregion'])
+    
+    data_Spinediameter=data_Spinediameter.assign(Segment =lambda x: data_Spinediameter.Segment.str.split('.').str[0])
+    data_Spinediameter=data_Spinediameter.assign(Neuron =lambda x: data_Spinediameter.Neuron.str[-1])
+    data_Spinediameter=data_Spinediameter.assign(Segment =lambda x: data_Spinediameter.Segment.str[-1])
+    
+    # repeat for Dendrite Spine Density
+    # Load all excel files in the folder into separate DataFrames and clean up
+    data_Spinedensity = pd.DataFrame()
+    for position, i in enumerate(filenames): 
+        df = pd.read_excel('%s'% i, sheet_name=sheet2,skiprows=[0])
+        df["filename"]= i
+        df.columns = ['Dendrite Spine Density','Unit','Category','Depth','Level','Time','FilementID','ID','Filename']
+        dfsel = df[['Filename','Dendrite Spine Density']]
+        data_Spinedensity = data_Spinedensity.append(dfsel,ignore_index=True,sort=False)
+    
+    # Make a column for the experiment number
+    data_Spinedensity=data_Spinedensity.assign(slidenummer =lambda x: data_Spinedensity.Filename.str.split('\s+').str[1])
+    
+    data_Spinedensity=data_Spinedensity.assign(preRatID =lambda x: data_Spinedensity.Filename.str.split('\s+').str[0])
+    data_Spinedensity=data_Spinedensity.assign(RatID =lambda x: data_Spinedensity.preRatID.str.split('_').str[-1])
+    data_Spinedensity=data_Spinedensity.assign(RatID =lambda x: data_Spinedensity.RatID.str[1:])
+    
+    data_Spinedensity=data_Spinedensity.assign(Brainregion =lambda x: data_Spinedensity.Filename.str.split('\s+').str[2])
+    data_Spinedensity=data_Spinedensity.assign(Neuron_pre =lambda x: data_Spinedensity.Filename.str.split('\s+').str[3])
+    
+    data_Spinedensity=data_Spinedensity.assign(Segment_pre =lambda x: data_Spinedensity.Filename.str.split('\s+').str[4])
+    data_Spinedensity=data_Spinedensity.assign(AB_pre =lambda x: data_Spinedensity.Filename.str.split('\s+').str[5])
+    data_Spinedensity=data_Spinedensity.assign(Segment_pre2 =lambda x: data_Spinedensity.Filename.str.split('\s+').str[6])
+    
+    data_Spinedensity['Neuron']=np.where((data_Spinedensity['Neuron_pre']=='PrL')|(data_Spinedensity['Neuron_pre']=='IL'),data_Spinedensity['Segment_pre'],data_Spinedensity['Neuron_pre'])
+    data_Spinedensity['Segment']=np.where((data_Spinedensity['Neuron_pre']=='PrL')|(data_Spinedensity['Neuron_pre']=='IL'),data_Spinedensity['Segment_pre2'],data_Spinedensity['Segment_pre'])
+    data_Spinedensity['Segment']=np.where((data_Spinedensity['Brainregion']=='PrL')|(data_Spinedensity['Brainregion']=='IL'),data_Spinedensity['AB_pre'],data_Spinedensity['Segment'])
+    data_Spinedensity['Subregion']=np.where((data_Spinedensity['Neuron_pre']=='PrL')|(data_Spinedensity['Neuron_pre']=='IL'),data_Spinedensity['Neuron_pre'],"")
+    data_Spinedensity['Subregion']=np.where((data_Spinedensity['Brainregion']=='PrL'),data_Spinedensity['Brainregion'],data_Spinedensity['Subregion'])
+    data_Spinedensity['Subregion']=np.where((data_Spinedensity['Brainregion']=='IL'),data_Spinedensity['Brainregion'],data_Spinedensity['Subregion'])
+    data_Spinedensity['AB']=np.where((data_Spinedensity['Neuron_pre']=='PrL')|(data_Spinedensity['Neuron_pre']=='IL'),data_Spinedensity['AB_pre'],"")
+    data_Spinedensity['AB']=np.where((data_Spinedensity['Brainregion']=='PrL')|(data_Spinedensity['Brainregion']=='IL'),data_Spinedensity['Segment_pre'],data_Spinedensity['AB'])
+    data_Spinedensity['Brainregion']=np.where((data_Spinedensity['Brainregion']=='PrL')|(data_Spinedensity['Brainregion']=='IL'),'mPFC',data_Spinedensity['Brainregion'])
+    
+    data_Spinedensity=data_Spinedensity.assign(Segment =lambda x: data_Spinedensity.Segment.str.split('.').str[0])
+    data_Spinedensity=data_Spinedensity.assign(Neuron =lambda x: data_Spinedensity.Neuron.str[-1])
+    data_Spinedensity=data_Spinedensity.assign(Segment =lambda x: data_Spinedensity.Segment.str[-1])
+    
+    # Add treatment for each rat
+    data_Spinelength['Treatment']=np.where(((data_Spinelength['RatID']=='1')|(data_Spinelength['RatID']=='2')|(data_Spinelength['RatID']=='11')|(data_Spinelength['RatID']=='12')|
+            (data_Spinelength['RatID']=='15')|(data_Spinelength['RatID']=='16')|(data_Spinelength['RatID']=='19')|(data_Spinelength['RatID']=='20')|(data_Spinelength['RatID']=='29')|(data_Spinelength['RatID']=='30')),'oil', "")
+    data_Spinelength['Treatment']=np.where(((data_Spinelength['RatID']=='3')|(data_Spinelength['RatID']=='4')|(data_Spinelength['RatID']=='7')|(data_Spinelength['RatID']=='8')|
+            (data_Spinelength['RatID']=='17')|(data_Spinelength['RatID']=='18')|(data_Spinelength['RatID']=='23')|(data_Spinelength['RatID']=='24')|(data_Spinelength['RatID']=='25')|(data_Spinelength['RatID']=='26')),'intact', data_Spinelength['Treatment'])
+    data_Spinelength['Treatment']=np.where(((data_Spinelength['RatID']=='5')|(data_Spinelength['RatID']=='6')|(data_Spinelength['RatID']=='9')|(data_Spinelength['RatID']=='10')|
+            (data_Spinelength['RatID']=='13')|(data_Spinelength['RatID']=='14')|(data_Spinelength['RatID']=='21')|(data_Spinelength['RatID']=='22')|(data_Spinelength['RatID']=='27')|(data_Spinelength['RatID']=='28')),'DHT', data_Spinelength['Treatment'])
+    
+    data_Spinediameter['Treatment']=np.where(((data_Spinediameter['RatID']=='1')|(data_Spinediameter['RatID']=='2')|(data_Spinediameter['RatID']=='11')|(data_Spinediameter['RatID']=='12')|
+            (data_Spinediameter['RatID']=='15')|(data_Spinediameter['RatID']=='16')|(data_Spinediameter['RatID']=='19')|(data_Spinediameter['RatID']=='20')|(data_Spinediameter['RatID']=='29')|(data_Spinediameter['RatID']=='30')),'oil', "")
+    data_Spinediameter['Treatment']=np.where(((data_Spinediameter['RatID']=='3')|(data_Spinediameter['RatID']=='4')|(data_Spinediameter['RatID']=='7')|(data_Spinediameter['RatID']=='8')|
+            (data_Spinediameter['RatID']=='17')|(data_Spinediameter['RatID']=='18')|(data_Spinediameter['RatID']=='23')|(data_Spinediameter['RatID']=='24')|(data_Spinediameter['RatID']=='25')|(data_Spinediameter['RatID']=='26')),'intact', data_Spinediameter['Treatment'])
+    data_Spinediameter['Treatment']=np.where(((data_Spinediameter['RatID']=='5')|(data_Spinediameter['RatID']=='6')|(data_Spinediameter['RatID']=='9')|(data_Spinediameter['RatID']=='10')|
+            (data_Spinediameter['RatID']=='13')|(data_Spinediameter['RatID']=='14')|(data_Spinediameter['RatID']=='21')|(data_Spinediameter['RatID']=='22')|(data_Spinediameter['RatID']=='27')|(data_Spinediameter['RatID']=='28')),'DHT', data_Spinediameter['Treatment'])
+    
+    data_Spinedensity['Treatment']=np.where(((data_Spinedensity['RatID']=='1')|(data_Spinedensity['RatID']=='2')|(data_Spinedensity['RatID']=='11')|(data_Spinedensity['RatID']=='12')|
+            (data_Spinedensity['RatID']=='15')|(data_Spinedensity['RatID']=='16')|(data_Spinedensity['RatID']=='19')|(data_Spinedensity['RatID']=='20')|(data_Spinedensity['RatID']=='29')|(data_Spinedensity['RatID']=='30')),'oil', "")
+    data_Spinedensity['Treatment']=np.where(((data_Spinedensity['RatID']=='3')|(data_Spinedensity['RatID']=='4')|(data_Spinedensity['RatID']=='7')|(data_Spinedensity['RatID']=='8')|
+            (data_Spinedensity['RatID']=='17')|(data_Spinedensity['RatID']=='18')|(data_Spinedensity['RatID']=='23')|(data_Spinedensity['RatID']=='24')|(data_Spinedensity['RatID']=='25')|(data_Spinedensity['RatID']=='26')),'intact', data_Spinedensity['Treatment'])
+    data_Spinedensity['Treatment']=np.where(((data_Spinedensity['RatID']=='5')|(data_Spinedensity['RatID']=='6')|(data_Spinedensity['RatID']=='9')|(data_Spinedensity['RatID']=='10')|
+            (data_Spinedensity['RatID']=='13')|(data_Spinedensity['RatID']=='14')|(data_Spinedensity['RatID']=='21')|(data_Spinedensity['RatID']=='22')|(data_Spinedensity['RatID']=='27')|(data_Spinedensity['RatID']=='28')),'DHT', data_Spinedensity['Treatment'])
+    
+    # loc the raw data per treatment for Spinelength
+    Spinelength_oil = data_Spinelength.loc[data_Spinelength['Treatment']=='oil',:]
+    Spinelength_oil  = Spinelength_oil[['Filename','Treatment','Spine Length']] 
+
+    Spinelength_intact = data_Spinelength.loc[data_Spinelength['Treatment']=='intact',:]
+    Spinelength_intact  = Spinelength_intact[['Filename','Treatment','Spine Length']] 
+  
+    Spinelength_DHT = data_Spinelength.loc[data_Spinelength['Treatment']=='DHT',:]
+    Spinelength_DHT  = Spinelength_DHT[['Filename','Treatment','Spine Length']] 
+
+    Spinediameter_oil = data_Spinediameter.loc[data_Spinediameter['Treatment']=='oil',:]
+    Spinediameter_oil  = Spinediameter_oil[['Filename','Treatment','Spine Diameter']] 
+
+    Spinediameter_intact = data_Spinediameter.loc[data_Spinediameter['Treatment']=='intact',:]
+    Spinediameter_intact  = Spinediameter_intact[['Filename','Treatment','Spine Diameter']] 
+  
+    Spinediameter_DHT = data_Spinediameter.loc[data_Spinediameter['Treatment']=='DHT',:]
+    Spinediameter_DHT  = Spinediameter_DHT[['Filename','Treatment','Spine Diameter']] 
+
+
+    # Calculate the data
+    data_Spinelength['0-0.5 um']=np.where(data_Spinelength['Spine Length']<0.5,1,np.NaN)
+    data_Spinelength['0.5-1 um']=np.where((data_Spinelength['Spine Length']>0.5)&(data_Spinelength['Spine Length']<1),1,np.NaN)
+    data_Spinelength['1-1.5 um']=np.where((data_Spinelength['Spine Length']>1)&(data_Spinelength['Spine Length']<1.5),1,np.NaN)
+    data_Spinelength['1.5-2 um']=np.where((data_Spinelength['Spine Length']>1.5)&(data_Spinelength['Spine Length']<2),1,np.NaN)
+    data_Spinelength['2-2.5 um']=np.where((data_Spinelength['Spine Length']>2)&(data_Spinelength['Spine Length']<2.5),1,np.NaN)
+    data_Spinelength['2.5-3 um']=np.where((data_Spinelength['Spine Length']>2.5)&(data_Spinelength['Spine Length']<3),1,np.NaN)
+    data_Spinelength['3-3.5 um']=np.where((data_Spinelength['Spine Length']>3)&(data_Spinelength['Spine Length']<3.5),1,np.NaN)
+    data_Spinelength['3.5-4 um']=np.where((data_Spinelength['Spine Length']>3.5)&(data_Spinelength['Spine Length']<4),1,np.NaN)
+    data_Spinelength['4-4.5 um']=np.where((data_Spinelength['Spine Length']>4)&(data_Spinelength['Spine Length']<4.5),1,np.NaN)
+    data_Spinelength['4.5-5 um']=np.where((data_Spinelength['Spine Length']>4.5)&(data_Spinelength['Spine Length']<5),1,np.NaN)
+    data_Spinelength['>5 um']=np.where((data_Spinelength['Spine Length']>5),1,np.NaN)
+    
+    data_Spinediameter['0-0.1 um']=np.where(data_Spinediameter['Spine Diameter']<0.1,1,np.NaN)
+    data_Spinediameter['0.1-0.2 um']=np.where((data_Spinediameter['Spine Diameter']>0.1)&(data_Spinediameter['Spine Diameter']<0.2),1,np.NaN)
+    data_Spinediameter['0.2-0.3 um']=np.where((data_Spinediameter['Spine Diameter']>0.2)&(data_Spinediameter['Spine Diameter']<0.3),1,np.NaN)
+    data_Spinediameter['0.3-0.4 um']=np.where((data_Spinediameter['Spine Diameter']>0.3)&(data_Spinediameter['Spine Diameter']<0.4),1,np.NaN)
+    data_Spinediameter['0.4-0.5 um']=np.where((data_Spinediameter['Spine Diameter']>0.4)&(data_Spinediameter['Spine Diameter']<0.5),1,np.NaN)
+    data_Spinediameter['0.5-0.6 um']=np.where((data_Spinediameter['Spine Diameter']>0.5)&(data_Spinediameter['Spine Diameter']<0.6),1,np.NaN)
+    data_Spinediameter['0.6-0.7 um']=np.where((data_Spinediameter['Spine Diameter']>0.6)&(data_Spinediameter['Spine Diameter']<0.7),1,np.NaN)
+    data_Spinediameter['0.7-0.8 um']=np.where((data_Spinediameter['Spine Diameter']>0.7)&(data_Spinediameter['Spine Diameter']<0.8),1,np.NaN)
+    data_Spinediameter['0.8-0.9 um']=np.where((data_Spinediameter['Spine Diameter']>0.8)&(data_Spinediameter['Spine Diameter']<0.9),1,np.NaN)
+    data_Spinediameter['0.9-1 um']=np.where((data_Spinediameter['Spine Diameter']>0.9)&(data_Spinediameter['Spine Diameter']<1),1,np.NaN)
+    data_Spinediameter['>1 um']=np.where((data_Spinediameter['Spine Diameter']>1),1,np.NaN)
+    
+    # Get the data out with counter
+    results_Spinelength=data_Spinelength.groupby(['Brainregion','Subregion','AB','Treatment','RatID','Neuron','Segment']).sum()
+    results_Spinediameter=data_Spinediameter.groupby(['Brainregion','Subregion','AB','Treatment','RatID','Neuron','Segment']).sum()
+    results_Spinedensity=data_Spinedensity.groupby(['Brainregion','Subregion','AB','Treatment','RatID','Neuron','Segment']).mean()
+    
+    results_Spinelength['Total count']=(results_Spinelength['0-0.5 um']+results_Spinelength['0.5-1 um']+results_Spinelength['1-1.5 um']+results_Spinelength['1.5-2 um']+results_Spinelength['2-2.5 um']+
+        results_Spinelength['2.5-3 um']+results_Spinelength['3-3.5 um']+results_Spinelength['3.5-4 um']+results_Spinelength['4-4.5 um']+results_Spinelength['4.5-5 um']+results_Spinelength['>5 um'])
+    
+    results_Spinediameter['Total count']=(results_Spinediameter['0-0.1 um']+results_Spinediameter['0.1-0.2 um']+results_Spinediameter['0.2-0.3 um']+results_Spinediameter['0.3-0.4 um']+
+        results_Spinediameter['0.4-0.5 um']+results_Spinediameter['0.5-0.6 um']+results_Spinediameter['0.6-0.7 um']+results_Spinediameter['0.7-0.8 um']+results_Spinediameter['0.8-0.9 um']+
+        results_Spinediameter['0.9-1 um']+results_Spinediameter['>1 um'])
+    
+    # Get average of Spine length and diamter
+    results_Spinelengthmean=data_Spinelength.groupby(['Brainregion','Subregion','AB','Treatment','RatID','Neuron','Segment']).mean()
+    results_Spinediametermean=data_Spinediameter.groupby(['Brainregion','Subregion','AB','Treatment','RatID','Neuron','Segment']).mean()
+    results_Spinelengthmean.rename(columns={'Spine Length':'Average Spine Length'}, inplace=True)
+    results_Spinediametermean.rename(columns={'Spine Diameter':'Average Spine Diameter'}, inplace=True)
+    
+    results_length= pd.concat([results_Spinelength, results_Spinelengthmean['Average Spine Length']], sort=False, axis=1)
+    results_diameter= pd.concat([results_Spinediameter, results_Spinediametermean['Average Spine Diameter']], sort=False, axis=1)
+    results_length.rename(columns={'Spine Length':'Sum Spine Length'}, inplace=True)
+    results_diameter.rename(columns={'Spine Diameter':'Sum Spine Diameter'}, inplace=True)
+    
+    results_length=results_length[['Sum Spine Length', '0-0.5 um', '0.5-1 um',
+           '1-1.5 um', '1.5-2 um', '2-2.5 um', '2.5-3 um', '3-3.5 um', '3.5-4 um',
+           '4-4.5 um', '4.5-5 um', '>5 um', 'Total count', 'Average Spine Length']]
+    results_diameter=results_diameter[['Sum Spine Diameter', '0-0.1 um',
+           '0.1-0.2 um', '0.2-0.3 um', '0.3-0.4 um', '0.4-0.5 um', '0.5-0.6 um',
+           '0.6-0.7 um', '0.7-0.8 um', '0.8-0.9 um', '0.9-1 um', '>1 um',
+           'Total count', 'Average Spine Diameter']]
+    results_Spinedensity= results_Spinedensity[['Dendrite Spine Density']]
+    
+    #results_length=results_length.reset_index()
+    
+    
+    # Calculate the statistics
+    mean_length_segments=results_length.groupby(['Brainregion','Subregion','AB','Treatment','RatID','Neuron']).mean()
+    mean_length_neurons=mean_length_segments.groupby(['Brainregion','Subregion','AB','Treatment','RatID']).mean()
+    mean_length_animals=mean_length_neurons.groupby(['Brainregion','Subregion','AB','Treatment']).mean()
+    
+    mean_diameter_segments=results_diameter.groupby(['Brainregion','Subregion','AB','Treatment','RatID','Neuron']).mean()
+    mean_diameter_neurons=mean_diameter_segments.groupby(['Brainregion','Subregion','AB','Treatment','RatID']).mean()
+    mean_diameter_animals=mean_diameter_neurons.groupby(['Brainregion','Subregion','AB','Treatment']).mean()
+    
+    mean_Spinedensity_segments=results_Spinedensity.groupby(['Brainregion','Subregion','AB','Treatment','RatID','Neuron']).mean()
+    mean_Spinedensity_neurons=mean_Spinedensity_segments.groupby(['Brainregion','Subregion','AB','Treatment','RatID']).mean()
+    mean_Spinedensity_animals=mean_Spinedensity_neurons.groupby(['Brainregion','Subregion','AB','Treatment']).mean()
+    
+   
+    # Make lists with right files to write to excel
+    list_df_results= [results_length,results_diameter,results_Spinedensity,mean_length_segments,mean_length_neurons,
+                      mean_length_animals,mean_diameter_segments,mean_diameter_neurons,mean_diameter_animals,
+                      mean_Spinedensity_segments,mean_Spinedensity_neurons,mean_Spinedensity_animals,data_Spinelength,
+                      data_Spinediameter]
+    list_df_rawdata= [Spinelength_intact,Spinelength_oil,Spinelength_DHT,Spinediameter_intact,Spinediameter_oil,
+                      Spinediameter_DHT]
+    
+    # Make lists with right files to write to excel
+    list_results= ['results_length','results_diameter','results_Spinedensity','mean_length_segments','mean_length_neurons',
+                      'mean_length_animals','mean_diameter_segments','mean_diameter_neurons','mean_diameter_animals',
+                      'mean_Spinedensity_segments','mean_Spinedensity_neurons','mean_Spinedensity_animals','data_Spinelength',
+                      'data_Spinediameter']
+    list_rawdata=['Spinelength_intact','Spinelength_oil','Spinelength_DHT','Spinediameter_intact','Spinediameter_oil',
+                      'Spinediameter_DHT']
+    
+    
+    save_xls(list_df_results,list_results,out_path1)
+    save_xls(list_df_rawdata,list_rawdata,out_path2)
+
